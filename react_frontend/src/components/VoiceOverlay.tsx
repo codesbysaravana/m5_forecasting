@@ -43,6 +43,7 @@ export default function VoiceOverlay() {
 
     const stopRecording = useCallback(() => {
         setIsRecording(false);
+        setIsOpen(false);
         if (mediaRecorderRef.current) {
             mediaRecorderRef.current.stop();
             mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
@@ -201,8 +202,8 @@ export default function VoiceOverlay() {
             stopRecording();
         } else {
             startRecording();
+            setIsOpen(true);
         }
-        setIsOpen(!isOpen);
     };
 
     return (
