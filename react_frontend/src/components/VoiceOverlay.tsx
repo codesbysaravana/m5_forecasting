@@ -162,6 +162,10 @@ export default function VoiceOverlay() {
                     if (msg.type === "text") {
                         setTranscript((prev) => [...prev, msg.content]);
                     }
+                    
+                    if (msg.type === "user_text") {
+                        setTranscript((prev) => [...prev, `\n\n👤 You: ${msg.content}\n\n🤖 Jade: `]);
+                    }
                 } else {
                     // It's binary audio data (TTS from Deepgram Aura!)
                     if (audioContextRef.current) {

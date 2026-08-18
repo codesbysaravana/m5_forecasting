@@ -259,6 +259,9 @@ async def voice_websocket(websocket: WebSocket):
                 # Add to memory
                 conversation_context["history"].append({"role": "user", "content": sentence})
                 
+                # Send user transcript to frontend so they know they were heard
+                asyncio.create_task(websocket.send_json({"type": "user_text", "content": sentence}))
+                
                 # Prevent memory from growing indefinitely (keep system prompt + last 20 messages)
                 if len(conversation_context["history"]) > 21:
                     conversation_context["history"].pop(1)
