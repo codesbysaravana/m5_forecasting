@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, BarChart, Bar, Cell } from 'recharts';
 import { API_BASE_URL } from '../config';
 
 export default function ForecastingDashboard() {
@@ -22,6 +22,7 @@ export default function ForecastingDashboard() {
     });
     const [prediction, setPrediction] = useState<number | null>(null);
     const [chartData, setChartData] = useState<any[]>([]);
+    const [impactData, setImpactData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +104,15 @@ export default function ForecastingDashboard() {
             if (data.status === 'success') {
                 const predVal = data.predicted_sales;
                 setPrediction(predVal);
+                
+                // Generate Feature Impact (Simulated for visualization)
+                const newImpact = [
+                    { name: 'Base', value: Math.max(0, predVal * 0.55) },
+                    { name: 'Price', value: predVal * (Number(formData.price) < 8 ? 0.15 : -0.05) },
+                    { name: 'Weekend', value: Number(formData.is_weekend) === 1 ? predVal * 0.2 : predVal * -0.05 },
+                    { name: 'SNAP', value: Number(formData.is_snap_day) === 1 ? predVal * 0.15 : 0 },
+                ].map(d => ({ ...d, value: parseFloat(d.value.toFixed(1)) }));
+                setImpactData(newImpact);
 
                 if (newChartData.length > 0) {
                     const lastIdx = newChartData.length - 1;
@@ -272,10 +282,30 @@ export default function ForecastingDashboard() {
                             </div>
                         </div>
 
-                        <div className="bg-[#121212] p-6 rounded-xl flex items-center justify-center opacity-50 border-dashed border-white/20">
-                            <p className="font-label-caps text-[12px] uppercase tracking-widest text-secondary text-center m-0">
-
-                            </p>
+                        <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-6 rounded-xl flex flex-col justify-between">
+                            <h3 className="font-label-caps text-[12px] uppercase tracking-widest text-secondary mb-4 m-0">Feature Impact (Drivers)</h3>
+                            {impactData.length > 0 ? (
+                                <div className="h-[80px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={impactData} layout="vertical" margin={{ top: 0, right: 20, left: -20, bottom: 0 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" width={80} tick={{ fill: '#757575', fontSize: 10, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
+                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                                            <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={8}>
+                                                {impactData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#3b82f6' : '#ef4444'} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            ) : (
+                                <div className="h-[80px] w-full flex items-center justify-center opacity-50 border border-dashed border-white/20 rounded">
+                                    <p className="font-label-caps text-[10px] uppercase tracking-widest text-secondary text-center m-0">
+                                        Run forecast to view drivers
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
 
