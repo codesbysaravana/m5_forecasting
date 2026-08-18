@@ -236,7 +236,7 @@ export default function VoiceOverlay() {
                             {transcript.map((text, idx) => (
                                 <span 
                                     key={idx} 
-                                    className="mr-1.5 inline-block"
+                                    className="inline-block whitespace-pre-wrap"
                                     style={{ animation: 'fadeInText 0.5s ease forwards', opacity: 0 }}
                                 >
                                     {text}
