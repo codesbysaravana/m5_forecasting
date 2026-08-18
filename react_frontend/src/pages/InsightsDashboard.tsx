@@ -26,6 +26,40 @@ export default function InsightsDashboard() {
         fetchInsights();
     }, []);
 
+    const handleExport = () => {
+        if (!data) return;
+
+        const lines = [];
+        // Top level metrics
+        lines.push("Metric,Value,Trend/Status,Growth");
+        lines.push(`"Projected Revenue","${data.projected_revenue.value}","${data.projected_revenue.trend}","${data.projected_revenue.growth}"`);
+        lines.push(`"Confidence Interval","${data.confidence_interval.value}","${data.confidence_interval.status}",""`);
+        
+        lines.push("");
+        // Drivers
+        lines.push("Key Driver,Change,Trend");
+        data.key_drivers.forEach((driver: any) => {
+            lines.push(`"${driver.name}","${driver.change}","${driver.trend}"`);
+        });
+        
+        lines.push("");
+        // Insight
+        lines.push("Jade AI Insight");
+        const safeInsight = data.jade_insight.replace(/"/g, '""');
+        lines.push(`"${safeInsight}"`);
+
+        const csvContent = lines.join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "m5_global_insights_export.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     if (loading) {
         return (
             <div className="flex flex-col gap-8 h-full items-center justify-center">
@@ -57,7 +91,7 @@ export default function InsightsDashboard() {
                     </h1>
                 </div>
                 <div className="flex gap-4">
-                    <button className="bg-transparent border border-white/20 text-on-surface px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-white/5 transition-colors font-label-caps text-[11px] uppercase tracking-widest cursor-pointer">
+                    <button onClick={handleExport} className="bg-transparent border border-white/20 text-on-surface px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-white/5 transition-colors font-label-caps text-[11px] uppercase tracking-widest cursor-pointer">
                         <span className="material-symbols-outlined text-[18px]">download</span>
                         Export
                     </button>
