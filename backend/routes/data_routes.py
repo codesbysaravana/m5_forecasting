@@ -225,12 +225,22 @@ def export_insights_excel():
                 if os.path.exists(model_path):
                     model = joblib.load(model_path)
                     future = model.make_future_dataframe(periods=28)
-                    future['sell_price'] = 8.26
-                    future['price_is_promo'] = 0
-                    future['price_vs_cat_avg'] = 1.0
-                    future['snap'] = 0
-                    future['is_weekend'] = 0
-                    future['is_event'] = 0
+                    try:
+                        from utils.calendar_utils import get_forecast_regressors
+                        regressors = get_forecast_regressors(store_id, item_id, future['ds'])
+                        future['sell_price'] = regressors['sell_price'].values
+                        future['price_is_promo'] = regressors['price_is_promo'].values
+                        future['price_vs_cat_avg'] = regressors['price_vs_cat_avg'].values
+                        future['snap'] = regressors['snap'].values
+                        future['is_weekend'] = regressors['is_weekend'].values
+                        future['is_event'] = regressors['is_event'].values
+                    except Exception:
+                        future['sell_price'] = 8.26
+                        future['price_is_promo'] = 0
+                        future['price_vs_cat_avg'] = 1.0
+                        future['snap'] = 0
+                        future['is_weekend'] = 0
+                        future['is_event'] = 0
                     
                     forecast = model.predict(future)
                     # Extract last 28 days

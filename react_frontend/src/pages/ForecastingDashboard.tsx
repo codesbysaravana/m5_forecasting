@@ -21,6 +21,7 @@ export default function ForecastingDashboard() {
         is_snap_day: 0
     });
     const [prediction, setPrediction] = useState<number | null>(null);
+    const [hoveredData, setHoveredData] = useState<{ day: string, value: number, isPredicted: boolean } | null>(null);
     const [chartData, setChartData] = useState<any[]>([]);
     const [impactData, setImpactData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -224,6 +225,33 @@ export default function ForecastingDashboard() {
         return null;
     };
 
+    const handleMouseMove = (state: any) => {
+        if (state && state.activePayload && state.activePayload.length > 0) {
+            const data = state.activePayload[0].payload;
+            // Prioritize predicted if it exists, otherwise actual
+            const hasPredicted = data.predicted !== null && data.predicted !== undefined;
+            const hasActual = data.actual !== null && data.actual !== undefined;
+            
+            if (hasPredicted || hasActual) {
+                setHoveredData(prev => {
+                    if (prev && prev.day === data.day) return prev; // Prevent unnecessary re-renders
+                    return {
+                        day: data.day,
+                        value: hasPredicted ? data.predicted : data.actual,
+                        isPredicted: hasPredicted
+                    };
+                });
+            }
+        } else {
+            // Clear if hovering over an area with no data points
+            setHoveredData(prev => prev !== null ? null : prev);
+        }
+    };
+
+    const handleMouseLeave = () => {
+        setHoveredData(null);
+    };
+
     return (
         <div className="w-full pb-12 fade-up-enter fade-up-enter-active">
             {/* Page Header */}
@@ -321,54 +349,57 @@ export default function ForecastingDashboard() {
                 {/* Right Column: Visualization */}
                 <div className="lg:col-span-8 xl:col-span-9 space-y-6 flex flex-col min-w-0">
 
-                    {/* KPI Cards Row */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-6 rounded-xl relative overflow-hidden group">
+                    {/* KPI Boxes */}
+                    <div className="flex gap-4 mb-2">
+                        {/* Dynamic Hover Card */}
+                        <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-4 rounded-xl relative overflow-hidden group flex-1 max-w-[280px]">
                             {/* Subtle background accent */}
-                            <div className="absolute -right-12 -top-12 w-32 h-32 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-all duration-700 pointer-events-none"></div>
+                            <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/10 transition-all duration-700 pointer-events-none"></div>
 
-                            <h3 className="font-label-caps text-[12px] uppercase tracking-widest text-secondary mb-2 m-0">Predicted Target Sales</h3>
-                            <div className="flex items-baseline gap-3">
-                                <span className="font-headline-xl text-4xl text-primary m-0 tracking-tight">
-                                    {prediction !== null ? prediction.toFixed(2) : '--'}
+                            <h3 className="font-label-caps text-[11px] uppercase tracking-widest text-secondary mb-1 m-0">
+                                {hoveredData ? `Sales on ${hoveredData.day}` : 'Hover chart for daily details'}
+                            </h3>
+                            <div className="flex items-baseline gap-2">
+                                <span className={`font-headline-xl text-3xl m-0 tracking-tight ${hoveredData ? 'text-primary' : 'text-secondary/30'}`}>
+                                    {hoveredData ? hoveredData.value.toFixed(2) : '--'}
                                 </span>
-                                <span className="font-body-sm text-secondary">units</span>
+                                <span className={`font-body-sm text-[12px] ${hoveredData ? 'text-secondary' : 'text-secondary/30'}`}>units</span>
                             </div>
-                            <div className="mt-3 flex items-center gap-2 text-[12px] text-secondary font-mono">
-                                <span className="material-symbols-outlined text-[14px]">info</span>
-                                Model Confidence: {prediction !== null ? '94%' : '--'}
+                            <div className={`mt-2 flex items-center gap-1.5 text-[11px] font-mono ${hoveredData ? 'text-secondary' : 'text-secondary/30'}`}>
+                                {hoveredData ? (
+                                    <>
+                                        <div className={`w-2 h-2 rounded-full ${hoveredData.isPredicted ? 'bg-primary shadow-[0_0_8px_rgba(212,175,55,0.4)]' : 'bg-transparent border border-secondary'}`}></div>
+                                        {hoveredData.isPredicted ? 'Predicted' : 'Actual'}
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[12px]">info</span>
+                                        Interactive Day View
+                                    </>
+                                )}
                             </div>
                         </div>
 
-                        <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-6 rounded-xl flex flex-col justify-between">
-                            <h3 className="font-label-caps text-[12px] uppercase tracking-widest text-secondary mb-4 m-0">Feature Impact (Drivers)</h3>
-                            {impactData.length > 0 ? (
-                                <div className="h-[80px] w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={impactData} layout="vertical" margin={{ top: 0, right: 20, left: -20, bottom: 0 }}>
-                                            <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" width={80} tick={{ fill: '#757575', fontSize: 10, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
-                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                                            <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={8}>
-                                                {impactData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#3b82f6' : '#ef4444'} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            ) : (
-                                <div className="h-[80px] w-full flex items-center justify-center opacity-50 border border-dashed border-white/20 rounded">
-                                    <p className="font-label-caps text-[10px] uppercase tracking-widest text-secondary text-center m-0">
-                                        Run forecast to view drivers
-                                    </p>
-                                </div>
-                            )}
+                        {/* Static Total Card */}
+                        <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-4 rounded-xl relative overflow-hidden group flex-1 max-w-[280px]">
+                            <h3 className="font-label-caps text-[11px] uppercase tracking-widest text-secondary mb-1 m-0">
+                                Total 28-Day Target Sales
+                            </h3>
+                            <div className="flex items-baseline gap-2">
+                                <span className="font-headline-xl text-3xl text-primary m-0 tracking-tight">
+                                    {prediction !== null ? prediction.toFixed(2) : '--'}
+                                </span>
+                                <span className="font-body-sm text-[12px] text-secondary">units</span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-secondary font-mono">
+                                <span className="material-symbols-outlined text-[12px]">model_training</span>
+                                Overall Sum
+                            </div>
                         </div>
                     </div>
 
                     {/* Main Chart Area */}
-                    <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-6 rounded-xl flex-1 flex flex-col min-h-[450px]">
+                    <div className="bg-[#121212] border border-[rgba(255,255,255,0.08)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] p-6 rounded-xl flex-1 flex flex-col min-h-[600px]">
                         <div className="flex justify-between items-center mb-6 pb-3 border-b border-white/10">
                             <h3 className="font-label-caps text-[12px] text-on-surface uppercase tracking-widest flex items-center gap-2 m-0">
                                 <span className="material-symbols-outlined text-[18px] text-secondary">monitoring</span>
@@ -399,7 +430,12 @@ export default function ForecastingDashboard() {
                             {/* Chart Data Render */}
                             <div className="absolute inset-0 pt-6 pr-6 pb-2 pl-0">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
+                                    <LineChart 
+                                        data={chartData} 
+                                        margin={{ top: 20, right: 20, left: -20, bottom: 0 }}
+                                        onMouseMove={handleMouseMove}
+                                        onMouseLeave={handleMouseLeave}
+                                    >
                                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                                         <XAxis
                                             dataKey="day"

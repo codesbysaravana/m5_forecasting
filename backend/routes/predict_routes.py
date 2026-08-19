@@ -61,14 +61,25 @@ def predict_sales(req: PredictionRequest):
             prophet_model = joblib.load(pkl_path)
             
             future = prophet_model.make_future_dataframe(periods=28)
-            
-            # The Texas Prophet models require these exact regressors to predict
-            future['sell_price'] = req.price
-            future['price_is_promo'] = 0
-            future['price_vs_cat_avg'] = 1.0
-            future['snap'] = req.is_snap_day
-            future['is_weekend'] = req.is_weekend
-            future['is_event'] = 0
+
+            # Fill regressors with correct per-day values from calendar/price data
+            try:
+                from utils.calendar_utils import get_forecast_regressors
+                regressors = get_forecast_regressors(req.store_id, req.item_id, future['ds'])
+                future['sell_price'] = regressors['sell_price'].values
+                future['price_is_promo'] = regressors['price_is_promo'].values
+                future['price_vs_cat_avg'] = regressors['price_vs_cat_avg'].values
+                future['snap'] = regressors['snap'].values
+                future['is_weekend'] = regressors['is_weekend'].values
+                future['is_event'] = regressors['is_event'].values
+            except Exception as cal_err:
+                print(f"Warning: Calendar data unavailable, using fallback constants: {cal_err}")
+                future['sell_price'] = req.price
+                future['price_is_promo'] = 0
+                future['price_vs_cat_avg'] = 1.0
+                future['snap'] = req.is_snap_day
+                future['is_weekend'] = req.is_weekend
+                future['is_event'] = 0
             
             forecast = prophet_model.predict(future)
             
