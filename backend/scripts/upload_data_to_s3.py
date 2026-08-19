@@ -15,11 +15,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.s3_utils import get_s3_client, AWS_S3_BUCKET_NAME
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "m5-forecasting-accuracy")
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "final_models")
 
 FILES_TO_UPLOAD = [
-    "calendar.csv",
-    "sell_prices.csv",
-    "sales_train_evaluation.csv",
+    # CSV data files
+    ("calendar.csv", DATA_DIR),
+    ("sell_prices.csv", DATA_DIR),
+    ("sales_train_evaluation.csv", DATA_DIR),
+    # LightGBM model files
+    ("lgb_global_model.pkl", MODELS_DIR),
+    ("model_features.pkl", MODELS_DIR),
+    ("recent_history.pkl", MODELS_DIR),
 ]
 
 
@@ -29,10 +35,11 @@ def upload():
         print("ERROR: S3 client not configured. Check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env")
         sys.exit(1)
 
-    for filename in FILES_TO_UPLOAD:
-        local_path = os.path.join(DATA_DIR, filename)
+    for entry in FILES_TO_UPLOAD:
+        filename, directory = entry
+        local_path = os.path.join(directory, filename)
         if not os.path.exists(local_path):
-            print(f"SKIP: {local_path} not found locally")
+            print(f"SKIP: {filename} not found at {local_path}")
             continue
 
         s3_key = f"data/{filename}"

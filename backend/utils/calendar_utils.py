@@ -42,9 +42,12 @@ def _load_sell_prices():
     if _price_lookup is not None:
         return
 
-    prices_path = _resolve_data_path("sell_prices.csv")
-    if prices_path is None:
-        raise FileNotFoundError("sell_prices.csv not found locally or in S3")
+    # Only load from local filesystem — never download from S3.
+    # sell_prices.csv is 194MB and builds ~500MB of dicts in RAM,
+    # which will OOM on constrained environments like Render.
+    prices_path = os.path.join(DATA_DIR, "sell_prices.csv")
+    if not os.path.exists(prices_path):
+        raise FileNotFoundError("sell_prices.csv not available (skipped to save RAM)")
     df = pd.read_csv(prices_path)
 
     df["cat_id"] = df["item_id"].str.split("_").str[0]

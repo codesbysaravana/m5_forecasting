@@ -21,11 +21,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    try:
-        from utils.calendar_utils import preload_data
-        preload_data()
-    except Exception as e:
-        print(f"Warning: Could not preload calendar data: {e}")
+    pass
 
 @app.get("/")
 def read_root():
