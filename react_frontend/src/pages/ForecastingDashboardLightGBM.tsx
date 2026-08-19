@@ -11,7 +11,7 @@ export default function ForecastingDashboard() {
     // If STORE_OWNER, force their assigned store. Otherwise, use URL param or default.
     const initialStoreId = userRole === 'STORE_OWNER' && assignedStoreId
         ? assignedStoreId
-        : (storeId || 'CA_1');
+        : (storeId || 'TX_1');
 
     const [formData, setFormData] = useState({
         item_id: 'HOBBIES_1_001',
@@ -30,7 +30,7 @@ export default function ForecastingDashboard() {
     // Sync URL param changes to the form data (useful if navigating between stores)
     useEffect(() => {
         if (userRole !== 'STORE_OWNER') {
-            setFormData(prev => ({ ...prev, store_id: storeId || 'CA_1' }));
+            setFormData(prev => ({ ...prev, store_id: storeId || 'TX_1' }));
         }
     }, [storeId, userRole]);
 
@@ -295,7 +295,7 @@ export default function ForecastingDashboard() {
                                 <input
                                     className={`bg-transparent border-0 border-b border-white/20 rounded-none text-[#e3e2e2] px-0 py-2 w-full font-mono text-sm transition-all focus:outline-none focus:border-primary focus:shadow-[0_0_4px_rgba(212,175,55,0.5)] focus:pl-2 ${userRole === 'STORE_OWNER' ? 'opacity-50 cursor-not-allowed bg-black/20' : ''}`}
                                     id="store_id" name="store_id"
-                                    placeholder="e.g. CA_1" type="text"
+                                    placeholder="e.g. TX_1" type="text"
                                     value={formData.store_id} onChange={handleChange} required
                                     disabled={userRole === 'STORE_OWNER'}
                                 />

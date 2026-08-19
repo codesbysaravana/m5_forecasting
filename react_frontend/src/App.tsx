@@ -13,7 +13,7 @@ import { Navigate } from 'react-router-dom';
 
 const DashboardIndex = () => {
   const userRole = localStorage.getItem('user_role');
-  const storeId = localStorage.getItem('store_id') || 'CA_1';
+  const storeId = localStorage.getItem('store_id') || 'TX_1';
 
   if (userRole === 'STORE_OWNER') {
     return <Navigate to={`/dashboard/store/${storeId}`} replace />;

@@ -31,10 +31,10 @@ export default function DashboardLayout() {
                                 </Link>
                             )}
                             
-                            <Link to={`/dashboard/store/${localStorage.getItem('store_id') || 'CA_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase transition-colors">
+                            <Link to={`/dashboard/store/${localStorage.getItem('store_id') || 'TX_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase transition-colors">
                                 Prophet
                             </Link>
-                            <Link to={`/dashboard/storelgbm/${localStorage.getItem('store_id') || 'CA_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase transition-colors">
+                            <Link to={`/dashboard/storelgbm/${localStorage.getItem('store_id') || 'TX_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase transition-colors">
                                 LightGBM
                             </Link>
 
@@ -66,10 +66,10 @@ export default function DashboardLayout() {
                         </Link>
                     )}
                     
-                    <Link to={`/dashboard/store/${localStorage.getItem('store_id') || 'CA_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase">
+                    <Link to={`/dashboard/store/${localStorage.getItem('store_id') || 'TX_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase">
                         Prophet
                     </Link>
-                    <Link to={`/dashboard/storelgbm/${localStorage.getItem('store_id') || 'CA_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase">
+                    <Link to={`/dashboard/storelgbm/${localStorage.getItem('store_id') || 'TX_1'}`} className="text-primary font-label-caps text-label-caps tracking-widest uppercase">
                         LightGBM
                     </Link>
 

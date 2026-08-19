@@ -123,7 +123,7 @@ export default function AdminPanel() {
                                         className="bg-transparent border-0 border-b border-white/20 rounded-none text-[#e3e2e2] px-0 py-2 w-full font-mono text-sm transition-all focus:outline-none focus:border-primary focus:shadow-[0_0_4px_rgba(212,175,55,0.5)] focus:pl-2 placeholder:text-white/20" 
                                         name="store_id" 
                                         type="text"
-                                        placeholder="e.g. CA_1" 
+                                        placeholder="e.g. TX_1" 
                                         value={formData.store_id} onChange={handleChange} required 
                                     />
                                     <p className="text-[10px] text-secondary mt-1 uppercase tracking-widest">Required for Store Owners</p>
@@ -152,7 +152,7 @@ export default function AdminPanel() {
                         <h3 className="font-display-md text-xl text-on-surface mb-2 tracking-tight">Role Restrictions</h3>
                         <p className="font-body-sm text-secondary max-w-sm mx-auto leading-relaxed">
                             <strong>Administrators</strong> have unrestricted access to all tools, stores, and user provisioning. <br/><br/>
-                            <strong>Store Owners</strong> are tightly scoped to their specific `store_id` (e.g., CA_1) and can only forecast data for their location.
+                            <strong>Store Owners</strong> are tightly scoped to their specific `store_id` (e.g., TX_1) and can only forecast data for their location.
                         </p>
                     </div>
                 </div>
