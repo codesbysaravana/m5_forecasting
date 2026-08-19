@@ -4,7 +4,7 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
-from utils.s3_utils import download_model_from_s3, download_lgb_model_from_s3
+from utils.s3_utils import download_model_from_s3, download_lgb_model_from_s3, download_data_file_from_s3
 
 router = APIRouter()
 
@@ -17,16 +17,44 @@ class PredictionRequest(BaseModel):
     is_snap_day: int
 
 
+def _get_future_actuals(item_id: str, store_id: str) -> list:
+    """Load 28-day actuals from sales_train_evaluation.csv (local or S3)."""
+    csv_path = os.path.join("..", "m5-forecasting-accuracy", "sales_train_evaluation.csv")
+    if not os.path.exists(csv_path):
+        csv_path = download_data_file_from_s3("sales_train_evaluation.csv")
+    if not csv_path:
+        return []
+
+    prefix = f"{item_id}_{store_id}"
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith(prefix):
+                    parts = line.strip().split(',')
+                    return [int(x) for x in parts[1919:1947]]
+    except Exception:
+        pass
+    return []
+
+
 # ─── Prophet Prediction ─────────────────────────────────────────────────────
 
 @router.post("/predict")
 @router.post("/predict/prophet")
 def predict_sales(req: PredictionRequest):
-    local_dev_path = os.path.join("..", "prophet_models", req.store_id, f"{req.item_id}.pkl")
+    local_dev_paths = [
+        os.path.join("..", "prophet_models", req.store_id, f"{req.item_id}.pkl"),
+        os.path.join("..", "texas_prophet_values", "prophet_models", req.store_id, f"{req.item_id}.pkl"),
+        os.path.join("..", "prophet_models_texas", "prophet_models", req.store_id, f"{req.item_id}.pkl"),
+    ]
 
-    if os.path.exists(local_dev_path):
-        pkl_path = local_dev_path
-    else:
+    pkl_path = None
+    for path in local_dev_paths:
+        if os.path.exists(path):
+            pkl_path = path
+            break
+
+    if pkl_path is None:
         pkl_path = os.path.join(os.getcwd(), "models_cache", req.store_id, f"{req.item_id}.pkl")
         if not os.path.exists(pkl_path):
             success = download_model_from_s3(req.store_id, req.item_id, pkl_path)
@@ -69,18 +97,7 @@ def predict_sales(req: PredictionRequest):
         daily_predictions = [max(0.0, float(x)) for x in future_28_days]
         historical_predictions = [max(0.0, float(x)) for x in history_30_days]
 
-        future_actuals = []
-        csv_path = os.path.join("..", "m5-forecasting-accuracy", "sales_train_evaluation.csv")
-        prefix = f"{req.item_id}_{req.store_id}"
-        try:
-            with open(csv_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith(prefix):
-                        parts = line.strip().split(',')
-                        future_actuals = [int(x) for x in parts[1919:1947]]
-                        break
-        except Exception:
-            pass
+        future_actuals = _get_future_actuals(req.item_id, req.store_id)
 
         return {
             "status": "success",
@@ -294,19 +311,7 @@ def predict_sales_lgb(req: PredictionRequest):
 
         historical_sales = [max(0, int(x)) for x in item_history['sales'].values[-30:]]
 
-        # Fetch future actuals for evaluation
-        future_actuals = []
-        csv_path = os.path.join("..", "m5-forecasting-accuracy", "sales_train_evaluation.csv")
-        prefix = f"{req.item_id}_{req.store_id}"
-        try:
-            with open(csv_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith(prefix):
-                        parts = line.strip().split(',')
-                        future_actuals = [int(x) for x in parts[1919:1947]]
-                        break
-        except Exception:
-            pass
+        future_actuals = _get_future_actuals(req.item_id, req.store_id)
 
         return {
             "status": "success",

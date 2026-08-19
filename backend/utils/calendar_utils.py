@@ -11,12 +11,24 @@ _item_max_lookup: Optional[dict] = None
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "m5-forecasting-accuracy")
 
 
+def _resolve_data_path(filename: str) -> Optional[str]:
+    """Find a data CSV locally or download from S3."""
+    local_path = os.path.join(DATA_DIR, filename)
+    if os.path.exists(local_path):
+        return local_path
+
+    from utils.s3_utils import download_data_file_from_s3
+    return download_data_file_from_s3(filename)
+
+
 def _load_calendar():
     global _calendar_df
     if _calendar_df is not None:
         return _calendar_df
 
-    cal_path = os.path.join(DATA_DIR, "calendar.csv")
+    cal_path = _resolve_data_path("calendar.csv")
+    if cal_path is None:
+        raise FileNotFoundError("calendar.csv not found locally or in S3")
     df = pd.read_csv(cal_path, parse_dates=["date"])
     df["is_weekend"] = df["wday"].isin([1, 2]).astype(int)
     df["is_event"] = (df["event_name_1"].fillna("") != "").astype(int)
@@ -30,7 +42,9 @@ def _load_sell_prices():
     if _price_lookup is not None:
         return
 
-    prices_path = os.path.join(DATA_DIR, "sell_prices.csv")
+    prices_path = _resolve_data_path("sell_prices.csv")
+    if prices_path is None:
+        raise FileNotFoundError("sell_prices.csv not found locally or in S3")
     df = pd.read_csv(prices_path)
 
     df["cat_id"] = df["item_id"].str.split("_").str[0]

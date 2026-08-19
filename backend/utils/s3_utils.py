@@ -42,22 +42,39 @@ def download_lgb_model_from_s3(store_id: str, item_id: str, local_dest_path: str
     return _download_from_s3(f"lightgbm_models/{store_id}/{item_id}.pkl", local_dest_path)
 
 
+def download_data_file_from_s3(filename: str) -> str | None:
+    """
+    Downloads a data CSV from S3 (key: data/<filename>) to a local cache.
+    Returns the local path if successful, None otherwise.
+    Skips download if the file already exists locally.
+    """
+    cache_dir = os.path.join(os.getcwd(), "data_cache")
+    local_path = os.path.join(cache_dir, filename)
+
+    if os.path.exists(local_path):
+        return local_path
+
+    s3_key = f"data/{filename}"
+    success = _download_from_s3(s3_key, local_path)
+    return local_path if success else None
+
+
 def _download_from_s3(s3_key: str, local_dest_path: str) -> bool:
     client = get_s3_client()
     if not client:
-        print("S3 Client not configured. Cannot download model.")
+        print("S3 Client not configured. Cannot download.")
         return False
 
     os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
 
     try:
-        print(f"Attempting to download {s3_key} from S3 bucket {AWS_S3_BUCKET_NAME}...")
+        print(f"Downloading {s3_key} from S3 bucket {AWS_S3_BUCKET_NAME}...")
         client.download_file(AWS_S3_BUCKET_NAME, s3_key, local_dest_path)
-        print(f"Successfully downloaded {s3_key} to {local_dest_path}")
+        print(f"Downloaded {s3_key} to {local_dest_path}")
         return True
     except ClientError as e:
         if e.response['Error']['Code'] == "404":
-            print(f"Model {s3_key} does not exist in S3.")
+            print(f"{s3_key} does not exist in S3.")
         else:
             print(f"Failed to download {s3_key}: {e}")
         return False
