@@ -39,7 +39,15 @@ export default function ForecastingDashboard() {
         let actualVol = 50;
         for (let i = 1; i <= 30; i++) {
             actualVol = actualVol + (Math.random() * 20 - 10);
-            initialData.push({ day: `Day -${30 - i}`, actual: Math.max(0, Math.round(actualVol)), predicted: null });
+            const dNum = 1913 - 30 + i;
+            const baseDate = new Date('2011-01-29T00:00:00Z');
+            baseDate.setUTCDate(baseDate.getUTCDate() + (dNum - 1));
+            initialData.push({
+                day: baseDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
+                dayNum: dNum,
+                actual: Math.max(0, Math.round(actualVol)),
+                predicted: null
+            });
         }
         setChartData(initialData);
     }, []);
@@ -91,11 +99,16 @@ export default function ForecastingDashboard() {
 
                 if (histResponse.ok) {
                     const histData = await histResponse.json();
-                    newChartData = histData.map((d: any) => ({
-                        day: `Day ${d.day}`,
-                        actual: d.sales,
-                        predicted: null
-                    }));
+                    newChartData = histData.map((d: any) => {
+                        const baseDate = new Date('2011-01-29T00:00:00Z');
+                        baseDate.setUTCDate(baseDate.getUTCDate() + (parseInt(d.day) - 1));
+                        return {
+                            day: baseDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
+                            dayNum: parseInt(d.day),
+                            actual: d.sales,
+                            predicted: null
+                        };
+                    });
                 }
             } catch (e) {
                 console.error("Failed to fetch historical data", e);
@@ -104,7 +117,7 @@ export default function ForecastingDashboard() {
             if (data.status === 'success') {
                 const predVal = data.predicted_sales;
                 setPrediction(predVal);
-                
+
                 // Generate Feature Impact (Simulated for visualization)
                 const newImpact = [
                     { name: 'Base', value: Math.max(0, predVal * 0.55) },
@@ -114,30 +127,75 @@ export default function ForecastingDashboard() {
                 ].map(d => ({ ...d, value: parseFloat(d.value.toFixed(1)) }));
                 setImpactData(newImpact);
 
-                if (newChartData.length > 0) {
-                    const lastIdx = newChartData.length - 1;
-                    newChartData[lastIdx].predicted = newChartData[lastIdx].actual; // overlap point
-
-                    const lastDayNum = parseInt(newChartData[lastIdx].day.replace('Day ', ''));
-                    newChartData.push({
-                        day: `Day ${lastDayNum + 1}`,
-                        actual: null,
-                        predicted: predVal
-                    });
-                } else {
+                if (newChartData.length === 0) {
                     // fallback if no history
                     let actualVol = 50;
                     for (let i = 1; i <= 30; i++) {
                         actualVol = actualVol + (Math.random() * 20 - 10);
-                        newChartData.push({ day: `Day -${30 - i}`, actual: Math.max(0, Math.round(actualVol)), predicted: null });
+                        const dNum = 1913 - 30 + i;
+                        const baseDate = new Date('2011-01-29T00:00:00Z');
+                        baseDate.setUTCDate(baseDate.getUTCDate() + (dNum - 1));
+                        newChartData.push({
+                            day: baseDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
+                            dayNum: dNum,
+                            actual: Math.max(0, Math.round(actualVol)),
+                            predicted: null
+                        });
                     }
-                    newChartData[newChartData.length - 1].predicted = newChartData[newChartData.length - 1].actual;
+                }
+
+                // Map historical predictions overlay to show fit on past 30 days
+                if (data.historical_predictions && data.historical_predictions.length > 0) {
+                    const histLen = data.historical_predictions.length;
+                    const chartLen = newChartData.length;
+                    for (let i = 0; i < Math.min(histLen, chartLen); i++) {
+                        newChartData[chartLen - 1 - i].predicted = data.historical_predictions[histLen - 1 - i];
+                    }
+                }
+
+                // Plot the 28-day predictions
+                const lastIdx = newChartData.length - 1;
+                // Connect lines if needed (only if no historical predictions)
+                if (!data.historical_predictions || data.historical_predictions.length === 0) {
+                    newChartData[lastIdx].predicted = newChartData[lastIdx].actual;
+                }
+
+                let lastDayNum = 1913;
+                if (newChartData[lastIdx] && newChartData[lastIdx].dayNum) {
+                    lastDayNum = newChartData[lastIdx].dayNum;
+                }
+
+                if (data.daily_predictions && data.daily_predictions.length > 0) {
+                    data.daily_predictions.forEach((dailyVal: number, index: number) => {
+                        const currentDayNum = lastDayNum + index + 1;
+                        const baseDate = new Date('2011-01-29T00:00:00Z');
+                        baseDate.setUTCDate(baseDate.getUTCDate() + (currentDayNum - 1));
+
+                        // Map future true actuals if they exist (for model evaluation)
+                        const trueActual = (data.future_actuals && data.future_actuals.length > index)
+                            ? data.future_actuals[index]
+                            : null;
+
+                        newChartData.push({
+                            day: baseDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
+                            dayNum: currentDayNum,
+                            actual: trueActual,
+                            predicted: dailyVal
+                        });
+                    });
+                } else {
+                    // Fallback just in case
+                    const currentDayNum = lastDayNum + 1;
+                    const baseDate = new Date('2011-01-29T00:00:00Z');
+                    baseDate.setUTCDate(baseDate.getUTCDate() + (currentDayNum - 1));
                     newChartData.push({
-                        day: `Day +1`,
+                        day: baseDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
+                        dayNum: currentDayNum,
                         actual: null,
                         predicted: predVal
                     });
                 }
+
                 setChartData(newChartData);
             } else {
                 throw new Error(data.model || 'Unknown error');

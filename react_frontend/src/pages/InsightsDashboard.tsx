@@ -26,38 +26,23 @@ export default function InsightsDashboard() {
         fetchInsights();
     }, []);
 
-    const handleExport = () => {
-        if (!data) return;
-
-        const lines = [];
-        // Top level metrics
-        lines.push("Metric,Value,Trend/Status,Growth");
-        lines.push(`"Projected Revenue","${data.projected_revenue.value}","${data.projected_revenue.trend}","${data.projected_revenue.growth}"`);
-        lines.push(`"Confidence Interval","${data.confidence_interval.value}","${data.confidence_interval.status}",""`);
-        
-        lines.push("");
-        // Drivers
-        lines.push("Key Driver,Change,Trend");
-        data.key_drivers.forEach((driver: any) => {
-            lines.push(`"${driver.name}","${driver.change}","${driver.trend}"`);
-        });
-        
-        lines.push("");
-        // Insight
-        lines.push("Jade AI Insight");
-        const safeInsight = data.jade_insight.replace(/"/g, '""');
-        lines.push(`"${safeInsight}"`);
-
-        const csvContent = lines.join("\n");
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", "m5_global_insights_export.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const handleExport = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/data/export_insights`);
+            if (!response.ok) throw new Error('Export failed');
+            
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "m5_global_insights_export.xlsx");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (e) {
+            console.error("Failed to export insights", e);
+        }
     };
 
     if (loading) {

@@ -1,8 +1,14 @@
 from fastapi import APIRouter
+from fastapi.responses import Response
 from pydantic import BaseModel
 from db.db import db
 from typing import List
 import statistics
+import os
+import joblib
+import io
+import openpyxl
+from utils.s3_utils import download_model_from_s3
 
 router = APIRouter()
 
@@ -162,6 +168,96 @@ def get_global_insights():
         "key_drivers": key_drivers,
         "jade_insight": jade_insight
     }
+
+@router.get("/export_insights")
+def export_insights_excel():
+    # 1. Fetch the base insights
+    insights = get_global_insights()
+    
+    # Define top items per store for batch forecasting (based on db query)
+    top_items = {
+        'TX_1': ['FOODS_3_586', 'FOODS_3_090'],
+        'TX_2': ['FOODS_3_586', 'FOODS_3_090'],
+        'TX_3': ['FOODS_3_090', 'FOODS_3_586']
+    }
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Global Insights"
+    
+    # --- Top Level Metrics ---
+    ws.append(["--- GLOBAL INSIGHTS ---"])
+    ws.append(["Metric", "Value", "Trend/Status", "Growth"])
+    
+    rev = insights.get('projected_revenue', {})
+    ws.append(["Projected Revenue", rev.get('value',''), rev.get('trend',''), rev.get('growth','')])
+    
+    conf = insights.get('confidence_interval', {})
+    ws.append(["Confidence Interval", conf.get('value',''), conf.get('status',''), ""])
+    
+    ws.append([])
+    ws.append(["--- KEY DRIVERS ---"])
+    ws.append(["Item", "Change", "Trend"])
+    for driver in insights.get('key_drivers', []):
+        ws.append([driver.get('name',''), driver.get('change',''), driver.get('trend','')])
+        
+    ws.append([])
+    ws.append(["--- BATCH PROPHET FORECASTS (Next 28 Days @ $8.26) ---"])
+    
+    header = ["Store", "Item", "28-Day Projected Volume"] + [f"Day {i}" for i in range(1, 29)]
+    ws.append(header)
+    
+    # --- Batch Prediction Generation ---
+    for store_id, items in top_items.items():
+        for item_id in items:
+            row = [store_id, item_id]
+            try:
+                local_dev_path = os.path.join("..", "prophet_models_texas", "prophet_models", store_id, f"{item_id}.pkl")
+                
+                if os.path.exists(local_dev_path):
+                    model_path = local_dev_path
+                else:
+                    model_path = os.path.join(os.getcwd(), "models_cache", store_id, f"{item_id}.pkl")
+                    # Check local cache, if not found try S3
+                    if not os.path.exists(model_path):
+                        download_model_from_s3(store_id, item_id, model_path)
+                    
+                if os.path.exists(model_path):
+                    model = joblib.load(model_path)
+                    future = model.make_future_dataframe(periods=28)
+                    future['sell_price'] = 8.26
+                    future['price_is_promo'] = 0
+                    future['price_vs_cat_avg'] = 1.0
+                    future['snap'] = 0
+                    future['is_weekend'] = 0
+                    future['is_event'] = 0
+                    
+                    forecast = model.predict(future)
+                    # Extract last 28 days
+                    future_28_days = forecast['yhat'].iloc[-28:]
+                    pred_sum = max(0.0, float(future_28_days.clip(lower=0).sum()))
+                    daily_vals = [round(max(0.0, float(x)), 2) for x in future_28_days]
+                    
+                    row.append(round(pred_sum, 2))
+                    row.extend(daily_vals)
+                else:
+                    row.append("Model Not Found")
+            except Exception as e:
+                row.append(f"Error generating forecast: {str(e)}")
+                
+            ws.append(row)
+
+    # Convert to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return Response(
+        content=output.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=m5_global_insights_export.xlsx"}
+    )
+
 
 def _fallback_mock_data():
     trajectory_data = []

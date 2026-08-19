@@ -11,3 +11,5 @@ openai
 passlib[bcrypt]
 websockets<14.0
 pandas
+prophet
+joblib
