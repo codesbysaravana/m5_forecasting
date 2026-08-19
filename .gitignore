@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
+.Pyt    hon
 env/
 build/
 develop-eggs/
@@ -64,3 +64,6 @@ examplesjava/
 
 prophet_models/
 texas_prophet_values
+final_models/
+
+backup.txt

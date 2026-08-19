@@ -68,7 +68,7 @@ export default function ForecastingDashboard() {
         setPrediction(null);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/predict/prophet`, {
+            const response = await fetch(`${API_BASE_URL}/api/predict/lightgbm`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

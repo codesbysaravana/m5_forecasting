@@ -6,7 +6,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-from routes.predict_routes import predict_sales, PredictionRequest
+from routes.predict_routes import predict_sales, predict_sales_lgb, PredictionRequest
 
 load_dotenv()
 
@@ -17,6 +17,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+
+_tts_http_client = httpx.AsyncClient(timeout=15.0)
 
 TOOLS = [
     {
@@ -66,58 +68,79 @@ TOOLS = [
     }
 ]
 
+TTS_URL = "https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&sample_rate=24000"
+TTS_HEADERS = {
+    "Authorization": f"Token {DEEPGRAM_API_KEY}",
+    "Content-Type": "application/json"
+}
 
-async def generate_llm_and_tts(transcript: str, websocket: WebSocket, conversation_history: list):
+
+async def stream_tts_to_ws(sentence: str, websocket: WebSocket, cancelled: asyncio.Event):
+    """Stream a single sentence's TTS audio to the client. Stops early if cancelled."""
+    try:
+        async with _tts_http_client.stream("POST", TTS_URL, headers=TTS_HEADERS, json={"text": sentence}) as r:
+            if r.status_code == 200:
+                async for chunk in r.aiter_bytes(4096):
+                    if cancelled.is_set():
+                        return
+                    await websocket.send_bytes(chunk)
+            else:
+                body = await r.aread()
+                print(f"TTS Error: {r.status_code} {body.decode()}")
+    except Exception as e:
+        print(f"TTS Network Error: {e}")
+
+
+async def generate_llm_and_tts(
+    transcript: str,
+    websocket: WebSocket,
+    conversation_history: list,
+    cancelled: asyncio.Event,
+):
+    """Stream LLM response and pipe sentences to TTS concurrently."""
     if transcript:
         print(f"User: {transcript}")
-    
-    # 1. Ask OpenAI
+
+    if cancelled.is_set():
+        return
+
     response = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=conversation_history,
         tools=TOOLS,
-        stream=True
+        stream=True,
     )
 
-    # 2. Setup audio queue and background worker for parallel TTS
-    sentence_queue = asyncio.Queue()
-    
+    # TTS worker with prefetch: allows next sentence to start fetching
+    # while current sentence is still streaming
+    sentence_queue: asyncio.Queue[str | None] = asyncio.Queue()
+
     async def tts_worker():
-        url = "https://api.deepgram.com/v1/speak?model=aura-hera-en"
-        headers = {
-            "Authorization": f"Token {DEEPGRAM_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        async with httpx.AsyncClient() as client:
-            while True:
-                sentence = await sentence_queue.get()
-                if sentence is None:
-                    break
-                
-                try:
-                    r = await client.post(url, headers=headers, json={"text": sentence}, timeout=10.0)
-                    if r.status_code == 200:
-                        await websocket.send_bytes(r.content)
-                    else:
-                        print(f"❌ Deepgram TTS Error: {r.status_code} {r.text}")
-                except Exception as e:
-                    print(f"❌ Deepgram TTS Network Error: {e}")
-                
+        while True:
+            sentence = await sentence_queue.get()
+            if sentence is None:
+                break
+            if cancelled.is_set():
                 sentence_queue.task_done()
-                
+                break
+            await stream_tts_to_ws(sentence, websocket, cancelled)
+            sentence_queue.task_done()
+
     tts_task = asyncio.create_task(tts_worker())
 
     buffer = ""
     full_ai_response = ""
-    
-    # Variables for tool calling
+
     tool_call_id = None
     tool_function_name = None
     tool_arguments = ""
-    
+
     async for chunk in response:
+        if cancelled.is_set():
+            break
+
         delta = chunk.choices[0].delta
-        
+
         if delta.tool_calls:
             tc = delta.tool_calls[0]
             if tc.id:
@@ -126,74 +149,69 @@ async def generate_llm_and_tts(transcript: str, websocket: WebSocket, conversati
                 tool_function_name = tc.function.name
             if tc.function.arguments:
                 tool_arguments += tc.function.arguments
-                
-        # Handle Normal Text
+
         elif delta.content:
             text_chunk = delta.content
             full_ai_response += text_chunk
             buffer += text_chunk
-            
-            # Send text chunks so the frontend UI can update instantly
-            await websocket.send_json({"type": "text", "content": text_chunk})
-            
-            # Sentence Boundary Detection
-            if any(punct in buffer for punct in ['.', '?', '!']):
-                # Find the last punctuation index
-                last_punct_idx = max(buffer.rfind('.'), buffer.rfind('?'), buffer.rfind('!'))
-                
-                # Split at the punctuation
-                sentence = buffer[:last_punct_idx+1].strip()
-                buffer = buffer[last_punct_idx+1:]
-                
-                if len(sentence) > 2: # Ignore stray whitespace/punctuation
-                    sentence_queue.put_nowait(sentence)
 
-    # Flush remaining buffer if there's no ending punctuation
-    if buffer.strip() and len(buffer.strip()) > 2:
+            await websocket.send_json({"type": "text", "content": text_chunk})
+
+            # Sentence boundary: split on .?! but not on common abbreviations
+            if any(p in buffer for p in ['. ', '? ', '! ', '.\n', '?\n', '!\n']):
+                last_idx = max(
+                    buffer.rfind('. '),
+                    buffer.rfind('? '),
+                    buffer.rfind('! '),
+                    buffer.rfind('.\n'),
+                    buffer.rfind('?\n'),
+                    buffer.rfind('!\n'),
+                )
+                if last_idx >= 0:
+                    sentence = buffer[:last_idx + 1].strip()
+                    buffer = buffer[last_idx + 1:]
+                    if len(sentence) > 3:
+                        sentence_queue.put_nowait(sentence)
+
+    # Flush remaining buffer
+    if buffer.strip() and len(buffer.strip()) > 3:
         sentence_queue.put_nowait(buffer.strip())
-        
+
     if full_ai_response:
-        print(f"🤖 AI: {full_ai_response}")
-        # Save AI response to memory
+        print(f"AI: {full_ai_response}")
         conversation_history.append({"role": "assistant", "content": full_ai_response})
-    
-    # 4. Wait for all sentences to be processed and sent
+
+    # Signal TTS worker to finish
     sentence_queue.put_nowait(None)
     await tts_task
-                    
-    # Tell frontend the audio stream for this sentence is complete
-    await websocket.send_json({"type": "audio_complete"})
 
-    # 5. Execute Tool Call if requested
+    if not cancelled.is_set():
+        await websocket.send_json({"type": "audio_complete"})
+
+    # Handle tool calls
     if tool_function_name == "close_connection":
-        print("🔧 Tool Call: close_connection")
-        # Tell the frontend to disconnect gracefully
+        print("Tool Call: close_connection")
         await websocket.send_json({"type": "close"})
         return
 
     if tool_function_name == "predict_sales":
-        print(f"🔧 Tool Call: {tool_function_name} with args {tool_arguments}")
-        
-        # Add the tool call to history so OpenAI knows it happened
+        print(f"Tool Call: {tool_function_name} with args {tool_arguments}")
+
         conversation_history.append({
             "role": "assistant",
             "content": None,
-            "tool_calls": [
-                {
-                    "id": tool_call_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_function_name,
-                        "arguments": tool_arguments
-                    }
+            "tool_calls": [{
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_function_name,
+                    "arguments": tool_arguments
                 }
-            ]
+            }]
         })
-        
+
         try:
             args = json.loads(tool_arguments)
-            
-            # Fill in defaults if not provided
             req_data = {
                 "item_id": args.get("item_id"),
                 "store_id": args.get("store_id"),
@@ -201,102 +219,128 @@ async def generate_llm_and_tts(transcript: str, websocket: WebSocket, conversati
                 "is_weekend": args.get("is_weekend", 0),
                 "is_snap_day": args.get("is_snap_day", 0)
             }
-            
-            # Run local prediction
-            result = predict_sales(PredictionRequest(**req_data))
-            
-            # Append result to history
+            req_obj = PredictionRequest(**req_data)
+            # Prefer LightGBM for voice (faster, handles intermittent zeros better)
+            result = predict_sales_lgb(req_obj)
+            if result.get("status") == "error":
+                result = predict_sales(req_obj)
+
             conversation_history.append({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
                 "name": tool_function_name,
                 "content": json.dumps(result)
             })
-            
-            print(f"✅ Tool Result: {result}")
-            
-            # Recursively call LLM to synthesize the tool result into speech
-            await generate_llm_and_tts("", websocket, conversation_history)
-            
+            print(f"Tool Result: {result}")
+            await generate_llm_and_tts("", websocket, conversation_history, cancelled)
+
         except Exception as e:
-            print(f"❌ Tool Execution Error: {e}")
-            # Tell LLM the tool failed
+            print(f"Tool Execution Error: {e}")
             conversation_history.append({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
                 "name": tool_function_name,
                 "content": json.dumps({"error": str(e)})
             })
-            await generate_llm_and_tts("", websocket, conversation_history)
+            await generate_llm_and_tts("", websocket, conversation_history, cancelled)
+
 
 @router.websocket("/ws/voice")
 async def voice_websocket(websocket: WebSocket):
     await websocket.accept()
-    print("✅ Client connected to Voice WebSocket")
-    
-    try:
-        # Create Deepgram live transcription connection
-        dg_connection = deepgram.listen.asyncwebsocket.v("1")
-        
-        # Session Memory for the duration of the WebSocket connection
-        conversation_context = {
-            "history": [
-                {
-                    "role": "system", 
-                    "content": "You are Jade, a highly intelligent and proactive AI voice assistant for the M5 Forecasting Engine. Keep answers brief (1-3 sentences) because they are spoken aloud. You have full memory of this conversation. Always address the user as 'boss'. When you return a prediction, speak proactively and autonomously like a real assistant (e.g., 'Sure boss, I ran the numbers myself. The prediction for [item] at [store] is [X]. Let me know if you need anything else, boss.'). If the user asks for a prediction without specifying price/weekend/snap day, just use the tool's default values automatically without asking. If the user asks you to close the connection, hang up, or says goodbye, use the close_connection tool immediately. You were built by Taasha Trinita."
-                }
-            ]
-        }
-        
-        # Define what happens when Deepgram transcribes a word
-        async def on_message(self, result, **kwargs):
-            sentence = result.channel.alternatives[0].transcript
-            if len(sentence) == 0:
-                return
-            
-            # If the user finished their sentence, trigger the LLM!
-            if result.is_final:
-                # Add to memory
-                conversation_context["history"].append({"role": "user", "content": sentence})
-                
-                # Send user transcript to frontend so they know they were heard
-                asyncio.create_task(websocket.send_json({"type": "user_text", "content": sentence}))
-                
-                # Prevent memory from growing indefinitely (keep system prompt + last 20 messages)
-                if len(conversation_context["history"]) > 21:
-                    conversation_context["history"].pop(1)
+    print("Client connected to Voice WebSocket")
 
-                # Fire and forget: run the LLM+TTS pipeline asynchronously without blocking the incoming audio
-                asyncio.create_task(generate_llm_and_tts(sentence, websocket, conversation_context["history"]))
-                
+    try:
+        dg_connection = deepgram.listen.asyncwebsocket.v("1")
+
+        conversation_history = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Jade, a highly intelligent and proactive AI voice assistant for the M5 Forecasting Engine. "
+                    "Keep answers brief (1-3 sentences) because they are spoken aloud. You have full memory of this conversation. "
+                    "Always address the user as 'boss'. When you return a prediction, speak proactively like a real assistant "
+                    "(e.g., 'Sure boss, I ran the numbers. The prediction for [item] at [store] is [X].'). "
+                    "If the user asks for a prediction without specifying price/weekend/snap day, use default values automatically. "
+                    "If the user says goodbye or asks to hang up, use the close_connection tool immediately. "
+                    "You were built by Taasha Trinita."
+                )
+            }
+        ]
+
+        # Cancellation event — set when a new utterance arrives to interrupt current response
+        current_cancel = asyncio.Event()
+        current_task: asyncio.Task | None = None
+
+        async def on_message(self, result, **kwargs):
+            nonlocal current_cancel, current_task
+
+            sentence = result.channel.alternatives[0].transcript
+            if not sentence:
+                return
+
+            if result.is_final:
+                conversation_history.append({"role": "user", "content": sentence})
+
+                # Notify frontend of user's speech
+                try:
+                    await websocket.send_json({"type": "user_text", "content": sentence})
+                except Exception:
+                    return
+
+                # Barge-in: cancel any in-flight LLM+TTS pipeline
+                if current_task and not current_task.done():
+                    current_cancel.set()
+                    try:
+                        await asyncio.wait_for(current_task, timeout=2.0)
+                    except (asyncio.TimeoutError, Exception):
+                        current_task.cancel()
+
+                # Trim history: keep system prompt + last 20 messages
+                while len(conversation_history) > 21:
+                    conversation_history.pop(1)
+
+                # Launch new pipeline
+                current_cancel = asyncio.Event()
+
+                async def run_pipeline(text, cancel_evt):
+                    try:
+                        await generate_llm_and_tts(text, websocket, conversation_history, cancel_evt)
+                    except Exception as e:
+                        print(f"LLM pipeline error: {e}")
+
+                current_task = asyncio.create_task(run_pipeline(sentence, current_cancel))
+
         async def on_error(self, error, **kwargs):
-            print(f"❌ Deepgram Error: {error}")
-            
+            print(f"Deepgram Error: {error}")
+
         dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
         dg_connection.on(LiveTranscriptionEvents.Error, on_error)
-        
-        # Deepgram options required for raw PCM audio stream
+
         options = LiveOptions(
             model="nova-2",
             language="en-US",
             smart_format=True,
             interim_results=False,
-            endpointing="1500" # Wait 1.5 seconds of silence before finalizing
+            encoding="linear16",
+            sample_rate=16000,
+            endpointing="750",
         )
-        
+
         await dg_connection.start(options)
-        
+
         try:
-            # Continuous loop to receive audio from React
             while True:
                 data = await websocket.receive_bytes()
-                # Instantly forward the raw audio to Deepgram STT
                 await dg_connection.send(data)
-                
+
         except WebSocketDisconnect:
-            print("❌ Client disconnected from Voice WebSocket")
+            print("Client disconnected from Voice WebSocket")
         finally:
+            if current_task and not current_task.done():
+                current_cancel.set()
+                current_task.cancel()
             await dg_connection.finish()
-            
+
     except Exception as e:
-        print(f"❌ Exception in voice route: {e}")
+        print(f"Exception in voice route: {e}")

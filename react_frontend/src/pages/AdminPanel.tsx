@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { API_BASE_URL } from '../config';
 
+import { Navigate } from 'react-router-dom';
+
 export default function AdminPanel() {
+    const userRole = localStorage.getItem('user_role');
+    
+    if (userRole !== 'ADMIN') {
+        return <Navigate to="/dashboard" replace />;
+    }
     const [formData, setFormData] = useState({
         email: '',
         password: '',

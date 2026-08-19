@@ -31,16 +31,25 @@ def download_model_from_s3(store_id: str, item_id: str, local_dest_path: str) ->
     Downloads the specified Prophet model from S3 to the local destination path.
     Returns True if successful, False otherwise.
     """
+    return _download_from_s3(f"prophet_models/{store_id}/{item_id}.pkl", local_dest_path)
+
+
+def download_lgb_model_from_s3(store_id: str, item_id: str, local_dest_path: str) -> bool:
+    """
+    Downloads the specified LightGBM model from S3 to the local destination path.
+    Returns True if successful, False otherwise.
+    """
+    return _download_from_s3(f"lightgbm_models/{store_id}/{item_id}.pkl", local_dest_path)
+
+
+def _download_from_s3(s3_key: str, local_dest_path: str) -> bool:
     client = get_s3_client()
     if not client:
         print("S3 Client not configured. Cannot download model.")
         return False
-        
-    s3_key = f"prophet_models/{store_id}/{item_id}.pkl"
-    
-    # Ensure local directory exists before downloading
+
     os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
-    
+
     try:
         print(f"Attempting to download {s3_key} from S3 bucket {AWS_S3_BUCKET_NAME}...")
         client.download_file(AWS_S3_BUCKET_NAME, s3_key, local_dest_path)

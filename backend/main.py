@@ -4,7 +4,7 @@ import os
 
 from db.db import db, init_db
 from routes.auth_routes import router as auth_router
-from routes.predict_routes import router as predict_router, load_lgb_model
+from routes.predict_routes import router as predict_router
 from routes.voice_routes import router as voice_router
 from routes.data_routes import router as data_router
 
@@ -21,7 +21,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    load_lgb_model()
     try:
         from utils.calendar_utils import preload_data
         preload_data()

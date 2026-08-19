@@ -8,23 +8,36 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 import MapDashboard from './pages/Map';
 import ForecastingDashboard from './pages/ForecastingDashboard';
+import ForecastingDashboardLightGBM from './pages/ForecastingDashboardLightGBM';
+import { Navigate } from 'react-router-dom';
+
+const DashboardIndex = () => {
+  const userRole = localStorage.getItem('user_role');
+  const storeId = localStorage.getItem('store_id') || 'CA_1';
+
+  if (userRole === 'STORE_OWNER') {
+    return <Navigate to={`/dashboard/store/${storeId}`} replace />;
+  }
+  return <MapDashboard />;
+};
 
 function App() {
   return (
     <BrowserRouter>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected Dashboard Routes */}
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-            <Route index element={<MapDashboard />} />
-            <Route path="store/:storeId" element={<ForecastingDashboard />} />
-            <Route path="insights" element={<InsightsDashboard />} />
-            <Route path="admin" element={<AdminPanel />} />
-          </Route>
-        </Routes>
+        {/* Protected Dashboard Routes */}
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+          <Route index element={<DashboardIndex />} />
+          <Route path="store/:storeId" element={<ForecastingDashboard />} />
+          <Route path="storelgbm/:storeId" element={<ForecastingDashboardLightGBM />} />
+          <Route path="insights" element={<InsightsDashboard />} />
+          <Route path="admin" element={<AdminPanel />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }
